@@ -120,4 +120,10 @@ defmodule Raxx.SimpleGateway.Client do
         {:noreply, state}
     end
   end
+
+  def handle_info({:tcp_closed, socket}, state = %{socket: socket}) do
+    send(state.caller, {state.reference, {:error, :interrupted}})
+
+    {:stop, :normal, state}
+  end
 end

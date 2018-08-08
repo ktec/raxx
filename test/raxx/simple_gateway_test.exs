@@ -134,15 +134,68 @@ defmodule Raxx.SimpleGatewayTest do
   # test "fails if second request is sent to client", %{gateway: gateway} do
   #   # should raise
   # end
-  #
-  # test "Connection lost during headers is reported to caller", %{gateway: gateway} do
-  # end
-  #
-  # test "Connection lost during body is reported to caller", %{gateway: gateway} do
-  # end
-  #
-  # test "Invalid response is returned to caller", %{gateway: gateway} do
-  # end
+
+  test "Connection lost during response line is reported to caller", %{gateway: gateway} do
+    {port, listen_socket} = listen()
+
+    request = Raxx.request(:GET, "http://localhost:#{port}/")
+    {:ok, task} = SimpleGateway.async(request, gateway: gateway)
+    monitor = Process.monitor(task.client)
+
+    {:ok, socket} = accept(listen_socket)
+    {:ok, _first_request} = receive_packet(socket)
+    :ok = :gen_tcp.send(socket, "HTTP/1.1 20")
+    :ok = :gen_tcp.close(socket)
+    {:error, :interrupted} = SimpleGateway.yield(task)
+    assert_receive {:DOWN, ^monitor, :process, _pid, :normal}
+  end
+
+  test "Connection lost during headers is reported to caller", %{gateway: gateway} do
+    {port, listen_socket} = listen()
+
+    request = Raxx.request(:GET, "http://localhost:#{port}/")
+    {:ok, task} = SimpleGateway.async(request, gateway: gateway)
+    monitor = Process.monitor(task.client)
+
+    {:ok, socket} = accept(listen_socket)
+    {:ok, _first_request} = receive_packet(socket)
+    :ok = :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nconte")
+    :ok = :gen_tcp.close(socket)
+    {:error, :interrupted} = SimpleGateway.yield(task)
+    assert_receive {:DOWN, ^monitor, :process, _pid, :normal}
+  end
+
+  test "Connection lost during content is reported to caller", %{gateway: gateway} do
+    {port, listen_socket} = listen()
+
+    request = Raxx.request(:GET, "http://localhost:#{port}/")
+    {:ok, task} = SimpleGateway.async(request, gateway: gateway)
+    monitor = Process.monitor(task.client)
+
+    {:ok, socket} = accept(listen_socket)
+    {:ok, _first_request} = receive_packet(socket)
+    :ok = :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-length: 12\r\n\r\nHello, R")
+    :ok = :gen_tcp.close(socket)
+    {:error, :interrupted} = SimpleGateway.yield(task)
+    assert_receive {:DOWN, ^monitor, :process, _pid, :normal}
+  end
+
+  @tag :skip
+  test "Invalid response is returned to caller", %{gateway: gateway} do
+    {port, listen_socket} = listen()
+
+    request = Raxx.request(:GET, "http://localhost:#{port}/")
+    {:ok, task} = SimpleGateway.async(request, gateway: gateway)
+    monitor = Process.monitor(task.client)
+
+    {:ok, socket} = accept(listen_socket)
+    {:ok, _first_request} = receive_packet(socket)
+    :ok = :gen_tcp.send(socket, "garbage\r\n")
+    :ok = :gen_tcp.close(socket)
+    {:error, :interrupted} = SimpleGateway.yield(task)
+    assert_receive {:DOWN, ^monitor, :process, _pid, :normal}
+  end
+
   #
   # test "error is reported to caller if client dies", %{gateway: gateway} do
   # end
