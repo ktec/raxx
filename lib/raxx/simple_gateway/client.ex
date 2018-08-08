@@ -1,6 +1,5 @@
 defmodule Raxx.SimpleGateway.Client do
   @moduledoc false
-
   use GenServer
 
   @enforce_keys [:reference]
@@ -61,7 +60,7 @@ defmodule Raxx.SimpleGateway.Client do
         # NOTE assumes data is the full request
         :ok = :gen_tcp.send(socket, data)
 
-        :inet.setopts(socket, active: :once)
+        :ok = :inet.setopts(socket, active: :once)
         state = %{state | socket: socket}
         {:noreply, state}
     end
@@ -69,7 +68,9 @@ defmodule Raxx.SimpleGateway.Client do
 
   @impl GenServer
   def handle_info({:tcp, socket, packet}, state = %{socket: socket, response: nil}) do
-    case Raxx.HTTP1.parse_response(packet) do
+    buffer = state.buffer <> packet
+
+    case Raxx.HTTP1.parse_response(buffer) do
       {:ok, response, body_state, rest} ->
         case state.request.method do
           :HEAD ->
@@ -83,16 +84,21 @@ defmodule Raxx.SimpleGateway.Client do
             case body_state do
               {:bytes, content_length} ->
                 state = %{state | response: response, body: {:bytes, content_length}}
-                handle_info({:tcp, socket, rest}, state)
+                handle_info({:tcp, socket, rest}, %{state | buffer: ""})
 
               {:complete, ""} ->
                 response = %{response | body: ""}
                 send(state.caller, {state.reference, {:ok, response}})
 
                 state = %{state | response: response, body: :complete}
-                handle_info({:tcp, socket, rest}, state)
+                {:stop, :normal, state}
             end
         end
+
+      {:more, :undefined} ->
+        state = %{state | buffer: buffer}
+        :ok = :inet.setopts(socket, active: :once)
+        {:noreply, state}
     end
   end
 
@@ -110,6 +116,7 @@ defmodule Raxx.SimpleGateway.Client do
 
       buffer ->
         state = %{state | buffer: buffer}
+        :ok = :inet.setopts(socket, active: :once)
         {:noreply, state}
     end
   end
