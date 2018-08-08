@@ -196,12 +196,41 @@ defmodule Raxx.SimpleGatewayTest do
     assert_receive {:DOWN, ^monitor, :process, _pid, :normal}
   end
 
-  #
-  # test "error is reported to caller if client dies", %{gateway: gateway} do
-  # end
-  #
-  # test "client exits if caller dies", %{gateway: gateway} do
-  # end
+  test "error is reported to caller if client dies", %{gateway: gateway} do
+    {port, listen_socket} = listen()
+
+    request = Raxx.request(:GET, "http://localhost:#{port}/")
+    {:ok, task} = SimpleGateway.async(request, gateway: gateway)
+    monitor = Process.monitor(task.client)
+
+    {:ok, socket} = accept(listen_socket)
+    {:ok, _first_request} = receive_packet(socket)
+    true = Process.exit(task.client, :shutdown)
+    assert_receive {:DOWN, ^monitor, :process, _pid, :shutdown}
+  end
+
+  test "client exits if caller dies", %{gateway: gateway} do
+    {port, listen_socket} = listen()
+    test_pid = self()
+
+    spawn(fn ->
+      request = Raxx.request(:GET, "http://localhost:#{port}/")
+      {:ok, task} = SimpleGateway.async(request, gateway: gateway)
+      send(test_pid, {:task, task})
+    end)
+
+    task =
+      receive do
+        {:task, task} ->
+          task
+      end
+
+    monitor = Process.monitor(task.client)
+
+    {:ok, socket} = accept(listen_socket)
+    {:ok, _first_request} = receive_packet(socket)
+    assert_receive {:DOWN, ^monitor, :process, _pid, :normal}
+  end
 
   defp listen(port \\ 0) do
     {:ok, listen_socket} = :gen_tcp.listen(port, mode: :binary, packet: :raw, active: false)

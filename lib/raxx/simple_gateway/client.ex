@@ -126,4 +126,9 @@ defmodule Raxx.SimpleGateway.Client do
 
     {:stop, :normal, state}
   end
+
+  def handle_info({:DOWN, monitor, :process, _pid, _reason}, state = %{monitor: monitor}) do
+    :ok = :gen_tcp.close(state.socket)
+    {:stop, :normal, state}
+  end
 end
