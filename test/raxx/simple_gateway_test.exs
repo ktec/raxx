@@ -17,7 +17,9 @@ defmodule Raxx.SimpleGatewayTest do
 
     {:ok, socket} = accept(listen_socket)
     {:ok, first_request} = receive_packet(socket)
-    assert "GET /path?query HTTP/1.1\r\nhost: localhost:#{port}\r\n\r\n" == first_request
+
+    assert "GET /path?query HTTP/1.1\r\nhost: localhost:#{port}\r\nconnection: close\r\n\r\n" ==
+             first_request
   end
 
   test "Request with complete body is sent", %{gateway: gateway} do
@@ -32,7 +34,7 @@ defmodule Raxx.SimpleGatewayTest do
     {:ok, socket} = accept(listen_socket)
     {:ok, first_request} = receive_packet(socket)
 
-    assert "GET / HTTP/1.1\r\nhost: localhost:#{port}\r\ncontent-length: 13\r\n\r\nHello, Raxx!!" ==
+    assert "GET / HTTP/1.1\r\nhost: localhost:#{port}\r\nconnection: close\r\ncontent-length: 13\r\n\r\nHello, Raxx!!" ==
              first_request
   end
 

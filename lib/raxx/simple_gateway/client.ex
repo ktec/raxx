@@ -39,7 +39,7 @@ defmodule Raxx.SimpleGateway.Client do
       body: nil
     }
 
-    case Raxx.HTTP1.serialize_request(task.request) do
+    case Raxx.HTTP1.serialize_request(task.request, connection: :close) do
       {head, {:complete, body}} ->
         target =
           {:erlang.binary_to_list(Raxx.request_host(task.request)),
