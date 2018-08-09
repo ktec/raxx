@@ -236,17 +236,23 @@ defmodule Raxx.SimpleGatewayTest do
     {port, listen_socket} = listen(0, :ssl)
 
     request = Raxx.request(:GET, "https://localhost:#{port}/path?query")
-    {:ok, _task} = SimpleGateway.async(request, gateway: gateway)
+    {:ok, task} = SimpleGateway.async(request, gateway: gateway)
+    monitor = Process.monitor(task.client)
 
     {:ok, socket} = accept(listen_socket, :ssl)
     {:ok, first_request} = receive_packet(socket, :ssl)
 
     assert "GET /path?query HTTP/1.1\r\nhost: localhost:#{port}\r\nconnection: close\r\n\r\n" ==
              first_request
-  end
 
-  # Test closing SSL cz caller died
-  # Test connection lost and triggering ssl_closed
+    :ok = :ssl.send(socket, "HTTP/1.1 200 OK\r\ncontent-length: 12\r\n\r\nHello, Raxx!")
+    {:ok, response} = SimpleGateway.yield(task)
+    assert response.status == 200
+    assert response.headers == [{"content-length", "12"}]
+    assert response.body == "Hello, Raxx!"
+
+    assert_receive {:DOWN, ^monitor, :process, _pid, :normal}
+  end
 
   defp listen(port \\ 0, transport \\ :tcp)
 
@@ -257,7 +263,14 @@ defmodule Raxx.SimpleGatewayTest do
   end
 
   defp listen(port, :ssl) do
-    {:ok, listen_socket} = :ssl.listen(port, mode: :binary, active: false)
+    {:ok, listen_socket} =
+      :ssl.listen(port,
+        mode: :binary,
+        active: false,
+        certfile: test_certfile(),
+        keyfile: test_keyfile()
+      )
+
     {:ok, {_, port}} = :ssl.sockname(listen_socket)
     {port, listen_socket}
   end
@@ -271,9 +284,9 @@ defmodule Raxx.SimpleGatewayTest do
   defp accept(listen_socket, :ssl) do
     case :ssl.transport_accept(listen_socket) do
       {:ok, socket} ->
-        case :ssl.ssl_accept(socket) do
-          :ok ->
-            {:ok, {:ssl, socket}}
+        case :ssl.handshake(socket) do
+          {:ok, socket} ->
+            {:ok, socket}
 
           {:error, :closed} ->
             {:error, :econnaborted}
@@ -295,5 +308,13 @@ defmodule Raxx.SimpleGatewayTest do
 
   defp receive_packet(socket, :ssl) do
     :ssl.recv(socket, 0, 1_000)
+  end
+
+  def test_certfile() do
+    Path.expand("tls/cert.pem", __DIR__)
+  end
+
+  def test_keyfile() do
+    Path.expand("tls/key.pem", __DIR__)
   end
 end

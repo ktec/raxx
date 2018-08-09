@@ -88,7 +88,7 @@ defmodule Raxx.SimpleGateway.Client do
             case body_read_state do
               {:bytes, content_length} ->
                 state = %{state | response: response, body: {:bytes, content_length}}
-                handle_info({:tcp, raw_socket, rest}, %{state | buffer: ""})
+                handle_info({transport, raw_socket, rest}, %{state | buffer: ""})
 
               {:complete, ""} ->
                 response = %{response | body: ""}
