@@ -10,7 +10,7 @@ defmodule Raxx.Mixfile do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       elixirc_options: [
-        warnings_as_errors: true
+        # warnings_as_errors: true
       ],
       description: description(),
       docs: [extras: ["README.md"], main: "readme"],

@@ -2,10 +2,8 @@ defmodule Raxx.SimpleGatewayTest do
   use ExUnit.Case
   alias Raxx.SimpleGateway
 
-  # TODO handle the connection close header
   setup do
     {:ok, gateway} = SimpleGateway.start_link()
-
     {:ok, %{gateway: gateway}}
   end
 
@@ -234,17 +232,68 @@ defmodule Raxx.SimpleGatewayTest do
     assert_receive {:DOWN, ^monitor, :process, _pid, :normal}
   end
 
-  defp listen(port \\ 0) do
+  test "Can send and receive over ssl", %{gateway: gateway} do
+    {port, listen_socket} = listen(0, :ssl)
+
+    request = Raxx.request(:GET, "https://localhost:#{port}/path?query")
+    {:ok, _task} = SimpleGateway.async(request, gateway: gateway)
+
+    {:ok, socket} = accept(listen_socket, :ssl)
+    {:ok, first_request} = receive_packet(socket, :ssl)
+
+    assert "GET /path?query HTTP/1.1\r\nhost: localhost:#{port}\r\nconnection: close\r\n\r\n" ==
+             first_request
+  end
+
+  # Test closing SSL cz caller died
+  # Test connection lost and triggering ssl_closed
+
+  defp listen(port \\ 0, transport \\ :tcp)
+
+  defp listen(port, :tcp) do
     {:ok, listen_socket} = :gen_tcp.listen(port, mode: :binary, packet: :raw, active: false)
     {:ok, port} = :inet.port(listen_socket)
     {port, listen_socket}
   end
 
-  defp accept(listen_socket) do
+  defp listen(port, :ssl) do
+    {:ok, listen_socket} = :ssl.listen(port, mode: :binary, active: false)
+    {:ok, {_, port}} = :ssl.sockname(listen_socket)
+    {port, listen_socket}
+  end
+
+  defp accept(listen_socket, transport \\ :tcp)
+
+  defp accept(listen_socket, :tcp) do
     :gen_tcp.accept(listen_socket, 1_000)
   end
 
-  defp receive_packet(socket) do
+  defp accept(listen_socket, :ssl) do
+    case :ssl.transport_accept(listen_socket) do
+      {:ok, socket} ->
+        case :ssl.ssl_accept(socket) do
+          :ok ->
+            {:ok, {:ssl, socket}}
+
+          {:error, :closed} ->
+            {:error, :econnaborted}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp receive_packet(socket, transport \\ :tcp)
+
+  defp receive_packet(socket, :tcp) do
     :gen_tcp.recv(socket, 0, 1_000)
+  end
+
+  defp receive_packet(socket, :ssl) do
+    :ssl.recv(socket, 0, 1_000)
   end
 end

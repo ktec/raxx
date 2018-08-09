@@ -42,7 +42,7 @@ defmodule Raxx.SimpleGateway.Client do
     case Raxx.HTTP1.serialize_request(task.request, connection: :close) do
       {head, {:complete, body}} ->
         target =
-          {:erlang.binary_to_list(Raxx.request_host(task.request)),
+          {task.request.scheme, :erlang.binary_to_list(Raxx.request_host(task.request)),
            Raxx.request_port(task.request)}
 
         data = [head, body]
@@ -52,22 +52,26 @@ defmodule Raxx.SimpleGateway.Client do
   end
 
   @impl GenServer
-  def handle_continue({:connect, {host, port}, data}, state) do
-    options = [mode: :binary, active: false]
+  def handle_continue({:connect, target, data}, state) do
+    options = [mode: :binary, packet: :raw, active: false]
 
-    case :gen_tcp.connect(host, port, options, 1_000) do
+    case connect(target, 1_000) do
       {:ok, socket} ->
         # NOTE assumes data is the full request
-        :ok = :gen_tcp.send(socket, data)
+        :ok = send_data(socket, data)
 
-        :ok = :inet.setopts(socket, active: :once)
+        :ok = set_active(socket)
         state = %{state | socket: socket}
         {:noreply, state}
     end
   end
 
   @impl GenServer
-  def handle_info({:tcp, socket, packet}, state = %{socket: socket, response: nil}) do
+  def handle_info(
+        {transport, raw_socket, packet},
+        state = %{socket: socket = {transport, raw_socket}, response: nil}
+      )
+      when transport in [:tcp, :ssl] do
     buffer = state.buffer <> packet
 
     case Raxx.HTTP1.parse_response(buffer) do
@@ -84,7 +88,7 @@ defmodule Raxx.SimpleGateway.Client do
             case body_read_state do
               {:bytes, content_length} ->
                 state = %{state | response: response, body: {:bytes, content_length}}
-                handle_info({:tcp, socket, rest}, %{state | buffer: ""})
+                handle_info({:tcp, raw_socket, rest}, %{state | buffer: ""})
 
               {:complete, ""} ->
                 response = %{response | body: ""}
@@ -97,15 +101,16 @@ defmodule Raxx.SimpleGateway.Client do
 
       {:more, :undefined} ->
         state = %{state | buffer: buffer}
-        :ok = :inet.setopts(socket, active: :once)
+        :ok = set_active(socket)
         {:noreply, state}
     end
   end
 
   def handle_info(
-        {:tcp, socket, packet},
-        state = %{socket: socket, body: {:bytes, content_length}}
-      ) do
+        {transport, raw_socket, packet},
+        state = %{socket: socket = {transport, raw_socket}, body: {:bytes, content_length}}
+      )
+      when transport in [:tcp, :ssl] do
     case state.buffer <> packet do
       <<body::binary-size(content_length), buffer::binary>> ->
         response = %{state.response | body: body}
@@ -116,19 +121,68 @@ defmodule Raxx.SimpleGateway.Client do
 
       buffer ->
         state = %{state | buffer: buffer}
-        :ok = :inet.setopts(socket, active: :once)
+        :ok = set_active(socket)
         {:noreply, state}
     end
   end
 
-  def handle_info({:tcp_closed, socket}, state = %{socket: socket}) do
+  def handle_info({transport_closed, raw_socket}, state = %{socket: {_transport, raw_socket}})
+      when transport_closed in [:tcp_closed, :ssl_closed] do
     send(state.caller, {state.reference, {:error, :interrupted}})
 
     {:stop, :normal, state}
   end
 
   def handle_info({:DOWN, monitor, :process, _pid, _reason}, state = %{monitor: monitor}) do
-    :ok = :gen_tcp.close(state.socket)
+    :ok = close(state.socket)
     {:stop, :normal, state}
+  end
+
+  defp connect({:http, host, port}, timout) do
+    options = [mode: :binary, packet: :raw, active: false]
+
+    case :gen_tcp.connect(host, port, options, 1_000) do
+      {:ok, raw_socket} ->
+        {:ok, {:tcp, raw_socket}}
+
+      other ->
+        other
+    end
+  end
+
+  defp connect({:https, host, port}, timout) do
+    options = [mode: :binary, packet: :raw, active: false]
+
+    case :ssl.connect(host, port, options, 1_000) do
+      {:ok, raw_socket} ->
+        {:ok, {:ssl, raw_socket}}
+
+      other ->
+        other
+    end
+  end
+
+  defp set_active({:tcp, socket}) do
+    :inet.setopts(socket, active: :once)
+  end
+
+  defp set_active({:ssl, socket}) do
+    :ssl.setopts(socket, active: :once)
+  end
+
+  defp send_data({:tcp, socket}, message) do
+    :gen_tcp.send(socket, message)
+  end
+
+  defp send_data({:ssl, socket}, message) do
+    :ssl.send(socket, message)
+  end
+
+  defp close({:tcp, socket}) do
+    :gen_tcp.close(socket)
+  end
+
+  defp close({:ssl, socket}) do
+    :ssl.close(socket)
   end
 end
