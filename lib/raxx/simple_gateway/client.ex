@@ -71,7 +71,7 @@ defmodule Raxx.SimpleGateway.Client do
     buffer = state.buffer <> packet
 
     case Raxx.HTTP1.parse_response(buffer) do
-      {:ok, response, body_state, rest} ->
+      {:ok, {response, _connection_status, body_read_state, rest}} ->
         case state.request.method do
           :HEAD ->
             response = %{response | body: ""}
@@ -81,7 +81,7 @@ defmodule Raxx.SimpleGateway.Client do
             {:stop, :normal, state}
 
           _ ->
-            case body_state do
+            case body_read_state do
               {:bytes, content_length} ->
                 state = %{state | response: response, body: {:bytes, content_length}}
                 handle_info({:tcp, socket, rest}, %{state | buffer: ""})
