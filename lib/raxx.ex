@@ -390,10 +390,10 @@ defmodule Raxx do
   ## Examples
 
       iex> request(:GET, "/")
-      ...> |> set_header("referer", "example.com")
+      ...> |> set_header("referrer", "example.com")
       ...> |> set_header("accept", "text/html")
       ...> |> Map.get(:headers)
-      [{"referer", "example.com"}, {"accept", "text/html"}]
+      [{"referrer", "example.com"}, {"accept", "text/html"}]
   """
   @spec set_header(Raxx.Request.t(), String.t(), String.t()) :: Raxx.Request.t()
   @spec set_header(Raxx.Response.t(), String.t(), String.t()) :: Raxx.Response.t()
