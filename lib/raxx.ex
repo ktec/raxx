@@ -480,11 +480,51 @@ defmodule Raxx do
       ...> |> set_body("Hello")
       ...> |> Map.get(:body)
       "Hello"
+
+      iex> request(:GET, "/")
+      ...> |> set_body("Hello")
+      ...> |> get_header("content-length")
+      "5"
+
   """
   @spec set_body(Raxx.Request.t(), body) :: Raxx.Request.t()
   @spec set_body(Raxx.Response.t(), body) :: Raxx.Response.t()
   def set_body(message = %{body: false}, body) do
     %{message | body: body}
+    |> set_content_length()
+  end
+
+  defp set_content_length(message = %{headers: _headers, body: true}) do
+    message
+  end
+
+  defp set_content_length(message = %{headers: headers, body: iodata}) do
+    case content_length(headers) do
+      nil ->
+        case :erlang.iolist_size(iodata) do
+          0 ->
+            message
+
+          content_length ->
+            message
+            |> set_header("content-length", Integer.to_string(content_length))
+        end
+
+      _value ->
+        # If a content-length is already set it is the callers responsibility to set the correct value
+        message
+    end
+  end
+
+  defp content_length(headers) do
+    case :proplists.get_all_values("content-length", headers) do
+      [] ->
+        nil
+
+      [binary] ->
+        {content_length, ""} = Integer.parse(binary)
+        content_length
+    end
   end
 
   @doc """
