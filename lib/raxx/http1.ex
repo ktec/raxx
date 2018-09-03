@@ -3,7 +3,7 @@ defmodule Raxx.HTTP1 do
   Toolkit for parsing and serializing requests to HTTP/1.1 format.
 
   The majority of functions return iolists and not compacted binaries.
-  To efficiently turn a list into a binart use `:erlang.iolist_to_binary/1`
+  To efficiently turn a list into a binary use `:erlang.iolist_to_binary/1`
 
   ## Notes
 
@@ -25,7 +25,7 @@ defmodule Raxx.HTTP1 do
   Elixir Outlaws convinced me to give it a try.
 
   - Property of serialize then decode the head should end up with the same struct
-  - Propery of any number of splits in the binary should not change the output
+  - Property of any number of splits in the binary should not change the output
   """
 
   @type connection_status :: nil | :close | :keepalive
@@ -603,7 +603,7 @@ defmodule Raxx.HTTP1 do
         {headers, true, :chunked}
 
       {[], headers} ->
-        case content_length(headers) do
+        case Raxx.get_content_length(headers) do
           nuffink when nuffink in [nil, 0] ->
             {headers, false, {:complete, ""}}
 
@@ -706,7 +706,7 @@ defmodule Raxx.HTTP1 do
   end
 
   defp payload(%{headers: headers, body: true}) do
-    case content_length(headers) do
+    case Raxx.get_content_length(headers) do
       nil ->
         {[{"transfer-encoding", "chunked"}], :chunked}
 
@@ -721,9 +721,8 @@ defmodule Raxx.HTTP1 do
 
   defp payload(%{headers: headers, body: iodata}) do
     payload_headers =
-      case content_length(headers) do
+      case Raxx.get_content_length(headers) do
         nil ->
-          # NOTE `:erlang.iolist_size/1` accepts binaries, i.e. should be `:erlang.iodata_size/1`
           case :erlang.iolist_size(iodata) do
             0 ->
               []
@@ -738,16 +737,5 @@ defmodule Raxx.HTTP1 do
       end
 
     {payload_headers, {:complete, iodata}}
-  end
-
-  defp content_length(headers) do
-    case :proplists.get_all_values("content-length", headers) do
-      [] ->
-        nil
-
-      [binary] ->
-        {content_length, ""} = Integer.parse(binary)
-        content_length
-    end
   end
 end

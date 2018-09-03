@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.15.11](https://github.com/CrowdHailer/raxx/tree/0.15.11) - 2018-09-04
+
+### Added
+
+- `Raxx.set_content_length/1` to add content-length to a message.
+- `Raxx.get_content_length/1` to retrieve the content-length from a message.
+
 ## [0.15.10](https://github.com/CrowdHailer/raxx/tree/0.15.10) - 2018-09-03
 
 ### Fixed

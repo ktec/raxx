@@ -494,34 +494,77 @@ defmodule Raxx do
     |> set_content_length()
   end
 
-  defp set_content_length(message = %{headers: _headers, body: true}) do
+  @doc """
+  Add a content-length header field to a message
+
+  The value is set to the `iolist_size` of the body, unless:
+   - the body is set to `true` or `false`
+   - the length of the body is 0
+   - a content-length is already set
+
+  ## Examples
+
+      iex> request(:GET, "/")
+      ...> |> set_content_length()
+      ...> |> get_header("content-length")
+      nil
+
+      iex> request(:GET, "/")
+      ...> |> set_body("Hello")
+      ...> |> get_header("content-length")
+      "5"
+
+  """
+  @spec set_content_length(Raxx.Request.t()) :: Raxx.Request.t()
+  @spec set_content_length(Raxx.Response.t()) :: Raxx.Response.t()
+  def set_content_length(message = %{body: body}) when body in [true, false] do
     message
   end
 
-  defp set_content_length(message = %{headers: headers, body: iodata}) do
-    case content_length(headers) do
-      nil ->
-        case :erlang.iolist_size(iodata) do
-          0 ->
-            message
-
-          content_length ->
-            message
-            |> set_header("content-length", Integer.to_string(content_length))
-        end
-
-      _value ->
-        # If a content-length is already set it is the callers responsibility to set the correct value
-        message
+  def set_content_length(message = %{body: iodata}) do
+    # NOTE `:erlang.iolist_size/1` accepts binaries, i.e. should be `:erlang.iodata_size/1`
+    with nil <- get_content_length(message),
+         content_length when content_length > 0 <- :erlang.iolist_size(iodata) do
+      message |> set_header("content-length", Integer.to_string(content_length))
+    else
+      _ -> message
     end
   end
 
-  defp content_length(headers) do
+  @doc """
+  Get the value of the content-length header field.
+
+  ## Examples
+
+      # iex> response(:ok)
+      # ...> |> set_header("content-length", "100")
+      # ...> |> get_content_length()
+      # 100
+      #
+      # iex> response(:ok)
+      # ...> |> get_content_length()
+      # nil
+
+  """
+  @spec get_content_length(headers) :: Integer.t() | nil
+  @spec get_content_length(Raxx.Response.t()) :: Integer.t() | nil
+  def get_content_length(headers) when is_list(headers) do
     case :proplists.get_all_values("content-length", headers) do
       [] ->
         nil
 
       [binary] ->
+        {content_length, ""} = Integer.parse(binary)
+        content_length
+    end
+  end
+
+  def get_content_length(message) do
+    case get_header(message, "content-length") do
+      nil ->
+        nil
+
+      binary ->
         {content_length, ""} = Integer.parse(binary)
         content_length
     end
